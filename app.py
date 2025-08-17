@@ -1,3 +1,4 @@
+# app.py
 import io
 import json
 import re
@@ -127,14 +128,330 @@ def lang_highlight(lang: str) -> str:
     }.get(lang, "text")
 
 # ---------------------------
-# Code templates (unchanged core)
+# Code templates
 # ---------------------------
-TPLS = {}
-# (… keep all your TPLS entries exactly as before …)
-# For brevity in this snippet, paste your previous TPLS dict here unchanged.
-# ---- START of TPLS paste ----
-# === COPY ALL TEMPLATE DEFINITIONS FROM YOUR PRIOR VERSION ===
-# ---- END of TPLS paste ----
+TPLS: dict[tuple[str, str], str] = {}
+
+# ---- Python ----
+TPLS[("Python", "Fetch JSON/API")] = """\
+import requests, json
+
+url = "%%URL%%"
+headers = %%HEADERS_JSON%%
+timeout = %%TIMEOUT%%
+
+r = requests.get(url, headers=headers, timeout=timeout)
+r.raise_for_status()
+data = r.json()
+print(json.dumps(data, indent=2, ensure_ascii=False))
+"""
+
+TPLS[("Python", "Scrape main text (HTML)")] = """\
+import requests
+from bs4 import BeautifulSoup
+
+url = "%%URL%%"
+headers = %%HEADERS_JSON%%
+timeout = %%TIMEOUT%%
+
+r = requests.get(url, headers=headers, timeout=timeout)
+r.raise_for_status()
+
+soup = BeautifulSoup(r.text, "lxml")
+for tag in soup(["script","style","noscript"]):
+    tag.decompose()
+
+text = " ".join(soup.get_text(separator=" ").split())
+print(text[:2000])
+"""
+
+TPLS[("Python", "Extract links (HTML)")] = """\
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+url = "%%URL%%"
+headers = %%HEADERS_JSON%%
+timeout = %%TIMEOUT%%
+
+r = requests.get(url, headers=headers, timeout=timeout)
+r.raise_for_status()
+
+soup = BeautifulSoup(r.text, "lxml")
+links = []
+for a in soup.find_all("a", href=True):
+    links.append(urljoin(url, a["href"]))
+
+for link in sorted(set(links)):
+    print(link)
+"""
+
+TPLS[("Python", "Download file (binary)")] = """\
+import requests
+
+url = "%%URL%%"
+outfile = "%%FILENAME%%"
+headers = %%HEADERS_JSON%%
+timeout = %%TIMEOUT%%
+
+with requests.get(url, headers=headers, stream=True, timeout=timeout) as r:
+    r.raise_for_status()
+    with open(outfile, "wb") as f:
+        for chunk in r.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+print(f"Saved to {outfile}")
+"""
+
+# ---- JavaScript (Node) ----
+TPLS[("JavaScript (Node)", "Fetch JSON/API")] = """\
+/* npm i axios */
+const axios = require("axios");
+
+const url = "%%URL%%";
+const headers = %%HEADERS_JSON%%;
+const timeout = %%TIMEOUT%% * 1000;
+
+axios.get(url, { headers, timeout })
+  .then(res => console.log(JSON.stringify(res.data, null, 2)))
+  .catch(err => { console.error(err.message); process.exit(1); });
+"""
+
+TPLS[("JavaScript (Node)", "Scrape main text (HTML)")] = """\
+/* npm i axios cheerio */
+const axios = require("axios");
+const cheerio = require("cheerio");
+
+const url = "%%URL%%";
+const headers = %%HEADERS_JSON%%;
+const timeout = %%TIMEOUT%% * 1000;
+
+axios.get(url, { headers, timeout })
+  .then(res => {
+    const $ = cheerio.load(res.data);
+    $("script,style,noscript").remove();
+    const text = $("body").text().replace(/\\s+/g, " ").trim();
+    console.log(text.slice(0, 2000));
+  })
+  .catch(err => { console.error(err.message); process.exit(1); });
+"""
+
+TPLS[("JavaScript (Node)", "Extract links (HTML)")] = """\
+/* npm i axios cheerio */
+const axios = require("axios");
+const cheerio = require("cheerio");
+const { URL } = require("url");
+
+const url = "%%URL%%";
+const headers = %%HEADERS_JSON%%;
+const timeout = %%TIMEOUT%% * 1000;
+
+axios.get(url, { headers, timeout })
+  .then(res => {
+    const $ = cheerio.load(res.data);
+    const base = new URL(url);
+    const set = new Set();
+    $("a[href]").each((_, a) => {
+      try {
+        const link = new URL($(a).attr("href"), base).href;
+        set.add(link);
+      } catch {}
+    });
+    [...set].sort().forEach(l => console.log(l));
+  })
+  .catch(err => { console.error(err.message); process.exit(1); });
+"""
+
+TPLS[("JavaScript (Node)", "Download file (binary)")] = """\
+/* npm i axios */
+const fs = require("fs");
+const axios = require("axios");
+
+const url = "%%URL%%";
+const outfile = "%%FILENAME%%";
+const headers = %%HEADERS_JSON%%;
+const timeout = %%TIMEOUT%% * 1000;
+
+axios.get(url, { headers, responseType: "stream", timeout })
+  .then(res => {
+    const writer = fs.createWriteStream(outfile);
+    res.data.pipe(writer);
+    writer.on("finish", () => console.log(`Saved to ${outfile}`));
+    writer.on("error", err => { console.error(err); process.exit(1); });
+  })
+  .catch(err => { console.error(err.message); process.exit(1); });
+"""
+
+# ---- TypeScript (Node) ----
+TPLS[("TypeScript (Node)", "Fetch JSON/API")] = """\
+// npm i axios @types/node
+import axios from "axios";
+
+const url = "%%URL%%";
+const headers = %%HEADERS_JSON%% as Record<string,string>;
+const timeout = %%TIMEOUT%% * 1000;
+
+(async () => {
+  try {
+    const res = await axios.get(url, { headers, timeout });
+    console.log(JSON.stringify(res.data, null, 2));
+  } catch (e:any) {
+    console.error(e.message);
+    process.exit(1);
+  }
+})();
+"""
+
+# ---- bash curl / wget ----
+TPLS[("bash (curl)", "Fetch JSON/API")] = """\
+#!/usr/bin/env bash
+set -euo pipefail
+curl -sSL -m %%TIMEOUT%% \\
+%%CURL_HEADERS%% \\
+  "%%URL%%"
+"""
+
+TPLS[("bash (curl)", "Download file (binary)")] = """\
+#!/usr/bin/env bash
+set -euo pipefail
+curl -L --max-time %%TIMEOUT%% \\
+%%CURL_HEADERS%% \\
+  -o "%%FILENAME%%" "%%URL%%"
+echo "Saved to %%FILENAME%%"
+"""
+
+TPLS[("bash (wget)", "Download file (binary)")] = """\
+#!/usr/bin/env bash
+set -euo pipefail
+wget --timeout=%%TIMEOUT%% --trust-server-names \\
+%%WGET_HEADERS%% \\
+  -O "%%FILENAME%%" "%%URL%%"
+echo "Saved to %%FILENAME%%"
+"""
+
+# ---- PowerShell ----
+TPLS[("PowerShell", "Fetch JSON/API")] = """\
+$Url = "%%URL%%"
+$Headers = %%HEADERS_JSON%%
+$Response = Invoke-RestMethod -Uri $Url -Headers $Headers -TimeoutSec %%TIMEOUT%%
+$Response | ConvertTo-Json -Depth 10
+"""
+
+TPLS[("PowerShell", "Download file (binary)")] = """\
+$Url = "%%URL%%"
+$OutFile = "%%FILENAME%%"
+$Headers = %%HEADERS_JSON%%
+Invoke-WebRequest -Uri $Url -Headers $Headers -OutFile $OutFile -TimeoutSec %%TIMEOUT%%
+Write-Host "Saved to $OutFile"
+"""
+
+# ---- Java (Jsoup) ----
+TPLS[("Java (Jsoup)", "Scrape main text (HTML)")] = """\
+/*
+Dependencies (Maven):
+  org.jsoup:jsoup:1.17.2
+*/
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+
+public class Scrape {
+  public static void main(String[] args) throws Exception {
+    String url = "%%URL%%";
+    Document doc = Jsoup.connect(url)
+      .timeout(%%TIMEOUT%% * 1000)
+      .header("User-Agent", "Mozilla/5.0")
+      .get();
+    String text = doc.text();
+    System.out.println(text.substring(0, Math.min(2000, text.length())));
+  }
+}
+"""
+
+# ---- C# (HttpClient) ----
+TPLS[("C# (HttpClient)", "Fetch JSON/API")] = """\
+using System;
+using System.Net.Http;
+using System.Threading.Tasks;
+
+class Fetch {
+  static async Task Main() {
+    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(%%TIMEOUT%%) };
+    var req = new HttpRequestMessage(HttpMethod.Get, "%%URL%%");
+    var headers = %%HEADERS_JSON%%;
+    foreach (var kv in headers) {
+      req.Headers.TryAddWithoutValidation(kv.Key, kv.Value.ToString());
+    }
+    var res = await http.SendAsync(req);
+    res.EnsureSuccessStatusCode();
+    var body = await res.Content.ReadAsStringAsync();
+    Console.WriteLine(body);
+  }
+}
+"""
+
+# ---- PHP ----
+TPLS[("PHP", "Fetch JSON/API")] = """\
+<?php
+$ch = curl_init("%%URL%%");
+$headers = [];
+$h = %%HEADERS_JSON%%;
+foreach ($h as $k => $v) { $headers[] = $k . ": " . $v; }
+curl_setopt_array($ch, [
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_HTTPHEADER => $headers,
+  CURLOPT_TIMEOUT => %%TIMEOUT%%,
+]);
+$resp = curl_exec($ch);
+if ($resp === false) { throw new Exception(curl_error($ch)); }
+echo $resp;
+"""
+
+# ---- Ruby ----
+TPLS[("Ruby", "Fetch JSON/API")] = """\
+require "net/http"
+require "uri"
+require "json"
+
+url = URI.parse("%%URL%%")
+req = Net::HTTP::Get.new(url)
+headers = %%HEADERS_JSON%%
+headers.each { |k,v| req[k] = v }
+
+http = Net::HTTP.new(url.host, url.port)
+http.use_ssl = url.scheme == "https"
+http.read_timeout = %%TIMEOUT%%
+res = http.request(req)
+puts res.body
+"""
+
+# ---- Go ----
+TPLS[("Go", "Fetch JSON/API")] = """\
+package main
+
+import (
+  "fmt"
+  "io"
+  "net/http"
+  "time"
+)
+
+func main() {
+  url := "%%URL%%"
+  client := &http.Client{ Timeout: time.Second * %%TIMEOUT%% }
+  req, _ := http.NewRequest("GET", url, nil)
+  headers := map[string]string{
+%%GO_HEADERS%%
+  }
+  for k, v := range headers {
+    req.Header.Set(k, v)
+  }
+  resp, err := client.Do(req)
+  if err != nil { panic(err) }
+  defer resp.Body.Close()
+  b, _ := io.ReadAll(resp.Body)
+  fmt.Println(string(b))
+}
+"""
 
 def to_shell_headers_curl(headers: dict) -> str:
     parts = []
@@ -178,14 +495,30 @@ def choose_task(auto_task: str, probe: dict) -> str:
     return "Download file (binary)"
 
 def generate_script(language: str, task: str, url: str, headers: dict, timeout: int, filename: str) -> str:
-    key = (language, task)
-    if key not in TPLS:
-        if (language, "Fetch JSON/API") in TPLS:
-            key = (language, "Fetch JSON/API")
-        else:
-            language = "Python"
-            key = (language, "Fetch JSON/API")
-    tpl = TPLS[key]
+    """
+    Safer template lookup with fallbacks:
+      1) (language, task)
+      2) (language, 'Fetch JSON/API')
+      3) ('Python', 'Fetch JSON/API')
+    """
+    fallback_order = [
+        (language, task),
+        (language, "Fetch JSON/API"),
+        ("Python", "Fetch JSON/API"),
+    ]
+    tpl = None
+    used_lang, used_task = language, task
+    for k in fallback_order:
+        if k in TPLS:
+            tpl = TPLS[k]
+            used_lang, used_task = k
+            break
+    if tpl is None:
+        # last-ditch minimal template to prevent crashes
+        tpl = 'import requests; r=requests.get("%%URL%%", headers=%%HEADERS_JSON%%, timeout=%%TIMEOUT%%); print(r.status_code); print(r.text[:2000])'
+        used_lang = "Python"
+        used_task = "Fetch JSON/API"
+
     code = tpl
     code = code.replace("%%URL%%", url)
     code = code.replace("%%TIMEOUT%%", str(timeout))
@@ -197,7 +530,7 @@ def generate_script(language: str, task: str, url: str, headers: dict, timeout: 
     return code
 
 # ---------------------------
-# NEW: Extraction utilities (to CSV/XLSX)
+# Extraction utilities (CSV/XLSX)
 # ---------------------------
 def fetch_json_to_df(url: str, headers: dict, timeout: int) -> pd.DataFrame:
     r = requests.get(url, headers=headers, timeout=timeout)
@@ -205,16 +538,13 @@ def fetch_json_to_df(url: str, headers: dict, timeout: int) -> pd.DataFrame:
     try:
         data = r.json()
     except Exception:
-        # if it isn't valid JSON, return raw
         return pd.DataFrame({"raw_text": [r.text]})
-    # Try to normalize into a flat table
     if isinstance(data, list):
         try:
             return pd.json_normalize(data)
         except Exception:
             return pd.DataFrame({"value": data})
     elif isinstance(data, dict):
-        # If dict has a single large list key, normalize that list
         big_list_key = None
         for k, v in data.items():
             if isinstance(v, list) and len(v) >= 1:
@@ -239,8 +569,7 @@ def scrape_text_to_df(url: str, headers: dict, timeout: int) -> pd.DataFrame:
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
     text = " ".join(soup.get_text(separator=" ").split())
-    # split into ~sentences/short chunks for tabular export
-    chunks = re.split(r"(?<=[.?!])\s+", text)
+    chunks = re.split(r"(?<=[.?!])\\s+", text)
     chunks = [c for c in chunks if c]
     return pd.DataFrame({"text": chunks})
 
@@ -253,7 +582,6 @@ def extract_links_to_df(url: str, headers: dict, timeout: int) -> pd.DataFrame:
         href = urljoin(url, a["href"])
         txt = " ".join((a.get_text() or "").split())
         out.append({"text": txt, "href": href})
-    # De-duplicate by href + text
     df = pd.DataFrame(out)
     if not df.empty:
         df = df.drop_duplicates(subset=["href", "text"]).reset_index(drop=True)
@@ -266,7 +594,6 @@ def df_to_xlsx_bytes(df: pd.DataFrame, sheet_name: str = "Data") -> bytes:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
         df.to_excel(writer, sheet_name=sheet_name, index=False)
-        # basic auto-width
         ws = writer.sheets[sheet_name]
         for i, col in enumerate(df.columns):
             width = min(60, max(10, int(df[col].astype(str).map(len).max() if not df.empty else 10)))
@@ -283,7 +610,7 @@ with st.sidebar:
     task_choice = st.selectbox("Task", TASKS, index=0)
     timeout = st.slider("HTTP timeout (seconds)", 5, 120, 30)
     add_ua = st.checkbox("Add browser-like User-Agent", value=True)
-    headers_text = st.text_area("Custom headers (one per line: Key: Value)", placeholder="Authorization: Bearer YOUR_TOKEN\nAccept-Language: en-US")
+    headers_text = st.text_area("Custom headers (one per line: Key: Value)", placeholder="Authorization: Bearer YOUR_TOKEN\\nAccept-Language: en-US")
     st.markdown("---")
     st.caption("⚖️ Please respect site Terms & robots.txt. Only scrape content you’re permitted to access.")
 
@@ -303,7 +630,6 @@ probe = None
 headers = None
 
 if url.strip():
-    # parse and merge headers once
     headers = parse_headers_input(headers_text or "")
     headers = add_default_user_agent(headers, add_ua)
 
@@ -334,12 +660,11 @@ if generate and url.strip():
         })
 
 # ---------------------------
-# NEW: Extract & Export workflow
+# Extract & Export workflow
 # ---------------------------
 if extract and url.strip():
     st.subheader("Extracted Data Preview")
     with st.spinner("Fetching & parsing…"):
-        # Decide extraction path using task selection or probe
         probe = probe_url(url.strip(), timeout=timeout, headers=headers)
         decided_task = choose_task(task_choice, probe)
 
@@ -363,8 +688,7 @@ if extract and url.strip():
 
     if df is not None:
         st.caption(note)
-        st.dataframe(df.head(500))  # preview
-        # Downloads
+        st.dataframe(df.head(500))
         csv_bytes = df_to_csv_bytes(df)
         xlsx_bytes = df_to_xlsx_bytes(df)
         c1, c2 = st.columns(2)
